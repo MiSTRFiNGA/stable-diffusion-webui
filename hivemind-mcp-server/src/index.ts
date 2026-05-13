@@ -302,6 +302,8 @@ function isAuthorized(req: http.IncomingMessage): boolean {
 // ---------------------------------------------------------------------------
 
 async function startHttp(): Promise<void> {
+  const sessions = new Map<string, StreamableHTTPServerTransport>();
+
   const httpServer = http.createServer(async (req, res) => {
     if (!isAuthorized(req)) {
       res.writeHead(401, { "Content-Type": "application/json" });
@@ -320,13 +322,29 @@ async function startHttp(): Promise<void> {
 
     // MCP endpoint — all devices connect here
     if (url.pathname === "/mcp") {
+      const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+      // Route to existing session if present
+      if (sessionId && sessions.has(sessionId)) {
+        await sessions.get(sessionId)!.handleRequest(req, res);
+        return;
+      }
+
+      // New session — only allow on initialize (POST with no session ID)
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
       });
       const server = makeServer();
-      res.on("close", () => { server.close().catch(() => {}); });
+
+      transport.onclose = () => {
+        if (transport.sessionId) sessions.delete(transport.sessionId);
+      };
+
       await server.connect(transport);
       await transport.handleRequest(req, res);
+
+      // Store after handling so session ID is populated
+      if (transport.sessionId) sessions.set(transport.sessionId, transport);
       return;
     }
 

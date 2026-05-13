@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Load Script / Cursive (Dancing Script) from Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: transparent;
+    }
+
+    .wrapper {
+      text-align: center;
+      padding: 16px;
+    }
+
+    /* Chain loop above the bar */
+    .chain-loop {
+      width: 10px;
+      height: 10px;
+      border: 2px solid #b8973a;
+      border-radius: 50%;
+      margin: 0 auto 4px;
+      background: transparent;
+    }
+
+    /* The gold bar */
+    .bar {
+      display: inline-block;
+      background: linear-gradient(
+        160deg,
+        #c9a227 0%,
+        #f0d060 35%,
+        #e8c840 55%,
+        #c9a227 100%
+      );
+      padding: 12px 36px;
+      border-radius: 3px;
+      box-shadow:
+        0 3px 10px rgba(0,0,0,0.25),
+        inset 0 1px 2px rgba(255,255,255,0.4);
+      min-width: 200px;
+      max-width: 340px;
+    }
+
+    #preview-text {
+      display: block;
+      font-size: 24px;
+      color: #2c1a00;
+      letter-spacing: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: font-family 0.25s ease;
+      text-shadow: 0 1px 1px rgba(255,255,255,0.3);
+    }
+
+    .label {
+      margin-top: 10px;
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      color: #999;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="chain-loop"></div>
+    <div class="bar">
+      <span id="preview-text">Your Text Here</span>
+    </div>
+    <div class="label">Live Preview</div>
+  </div>
+
+  <script>
+    var el = document.getElementById('preview-text');
+
+    window.onmessage = function (event) {
+      var data = event.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.text !== undefined) el.textContent = data.text || 'Your Text Here';
+      if (data.font !== undefined) el.style.fontFamily = data.font;
+    };
+  </script>
+</body>
+</html>

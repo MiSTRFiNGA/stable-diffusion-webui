@@ -1,0 +1,13 @@
+{
+  "_comment": "Claude Code MCP config for hivemind-desktop. Copy this to: C:\\Users\\<YOU>\\.claude\\mcp.json",
+  "mcpServers": {
+    "hivemind": {
+      "type": "http",
+      "url": "http://127.0.0.1:3737/mcp",
+      "_comment_url": "Desktop connects to itself via localhost since it IS the hub",
+      "headers": {
+        "Authorization": "Bearer your-secret-key"
+      }
+    }
+  }
+}

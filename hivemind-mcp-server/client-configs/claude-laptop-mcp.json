@@ -1,0 +1,14 @@
+{
+  "_comment": "Claude Code MCP config for drone-laptop. Copy this to: C:\\Users\\<YOU>\\.claude\\mcp.json",
+  "_comment2": "Replace 100.x.x.x with the desktop's actual Tailscale IP (run: tailscale ip -4 on the desktop)",
+  "mcpServers": {
+    "hivemind": {
+      "type": "http",
+      "url": "http://100.x.x.x:3737/mcp",
+      "_comment_url": "Points to hivemind-desktop over Tailscale",
+      "headers": {
+        "Authorization": "Bearer your-secret-key"
+      }
+    }
+  }
+}

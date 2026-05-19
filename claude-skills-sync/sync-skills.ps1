@@ -1,74 +1,81 @@
 # =============================================================================
 # HIVEMIND — Claude Code Skills Sync (Windows / PowerShell)
-# Runs on SessionStart on both HiVEMiND and DRONE01.
-# Pulls the shared skills repo and copies any new/updated skills into
-# the local Claude Code skills folder. Existing skills are updated in place.
+# Runs on SessionStart on HiVEMiND and DRONE01.
+# Pulls all skills repos from skills-config.json and installs into
+# %USERPROFILE%\.claude\skills\
 # =============================================================================
 
 $ErrorActionPreference = "SilentlyContinue"
 
-# ── Paths ────────────────────────────────────────────────────────────────────
-# Shared Drive config (same file on both machines via Google Drive sync)
-$DRIVE_AI     = "D:\My Drive\AI"
-$CONFIG_FILE  = "$DRIVE_AI\claude-skills-sync\skills-config.json"
-$CACHE_DIR    = "$DRIVE_AI\claude-skills-sync\.repo-cache"   # cloned repo lands here
-
-# Local Claude Code skills folder (Windows)
+$DRIVE_AI      = "D:\My Drive\AI"
+$CONFIG_FILE   = "$DRIVE_AI\claude-skills-sync\skills-config.json"
+$CACHE_ROOT    = "$DRIVE_AI\claude-skills-sync\.repo-cache"
 $CLAUDE_SKILLS = "$env:USERPROFILE\.claude\skills"
 
-# ── Load config ───────────────────────────────────────────────────────────────
 if (-not (Test-Path $CONFIG_FILE)) {
-    Write-Host "[skills-sync] Config not found at $CONFIG_FILE — skipping." -ForegroundColor Yellow
+    Write-Host "[skills-sync] Config not found — skipping." -ForegroundColor Yellow
     exit 0
 }
 
-$config = Get-Content $CONFIG_FILE | ConvertFrom-Json
-$REPO_URL  = $config.skills_repo_url
-$BRANCH    = if ($config.branch) { $config.branch } else { "main" }
-$SUBDIR    = $config.skills_subdir   # may be empty
+$config     = Get-Content $CONFIG_FILE | ConvertFrom-Json
+$repos      = $config.repos
+$branch     = if ($config.branch) { $config.branch } else { "main" }
 
-if ($REPO_URL -eq "PASTE_GITHUB_REPO_URL_HERE" -or -not $REPO_URL) {
-    Write-Host "[skills-sync] Repo URL not set in skills-config.json — skipping." -ForegroundColor Yellow
+if (-not $repos -or $repos.Count -eq 0) {
+    Write-Host "[skills-sync] No repos configured — skipping." -ForegroundColor Yellow
     exit 0
 }
 
-# ── Ensure local Claude skills dir exists ────────────────────────────────────
-if (-not (Test-Path $CLAUDE_SKILLS)) {
-    New-Item -ItemType Directory -Path $CLAUDE_SKILLS -Force | Out-Null
+New-Item -ItemType Directory -Force -Path $CLAUDE_SKILLS | Out-Null
+New-Item -ItemType Directory -Force -Path $CACHE_ROOT    | Out-Null
+
+$totalSkills = 0
+
+foreach ($repo in $repos) {
+    $repoUrl = $repo.url
+    $subdir  = $repo.subdir
+
+    # Safe cache folder name
+    $repoSlug  = $repoUrl -replace "https://github.com/", "" -replace "/", "-"
+    $cacheDir  = Join-Path $CACHE_ROOT $repoSlug
+
+    # Clone or pull — try configured branch then master
+    $cloned = $false
+    foreach ($branchTry in @($branch, "master")) {
+        if (-not (Test-Path "$cacheDir\.git")) {
+            git clone --branch $branchTry --depth 1 $repoUrl $cacheDir 2>&1 | Out-Null
+            if (Test-Path "$cacheDir\.git") { $cloned = $true; break }
+        } else {
+            git -C $cacheDir fetch --depth 1 origin $branchTry 2>&1 | Out-Null
+            git -C $cacheDir reset --hard "origin/$branchTry" 2>&1 | Out-Null
+            $cloned = $true; break
+        }
+    }
+
+    if (-not $cloned -or -not (Test-Path $cacheDir)) {
+        Write-Host "[skills-sync] WARN: failed to clone $repoUrl — skipping." -ForegroundColor Yellow
+        continue
+    }
+
+    $skillsSrc = if ($subdir) { Join-Path $cacheDir $subdir } else { $cacheDir }
+
+    # If repo root is a single skill (has SKILL.md at root)
+    if (Test-Path (Join-Path $skillsSrc "SKILL.md")) {
+        $skillName = ($repoSlug -split "-")[-1]
+        robocopy $skillsSrc (Join-Path $CLAUDE_SKILLS $skillName) /MIR /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+        $totalSkills++
+        continue
+    }
+
+    # Otherwise each subdir with SKILL.md is a separate skill
+    Get-ChildItem -Path $skillsSrc -Directory | ForEach-Object {
+        $skillName = $_.Name
+        if ($skillName -match '^\.' ) { return }
+        if (Test-Path (Join-Path $_.FullName "SKILL.md")) {
+            robocopy $_.FullName (Join-Path $CLAUDE_SKILLS $skillName) /MIR /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+            $totalSkills++
+        }
+    }
 }
 
-# ── Clone or pull the skills repo into the shared cache ──────────────────────
-if (-not (Test-Path "$CACHE_DIR\.git")) {
-    Write-Host "[skills-sync] Cloning skills repo..." -ForegroundColor Cyan
-    git clone --branch $BRANCH --depth 1 $REPO_URL $CACHE_DIR 2>&1 | Out-Null
-} else {
-    Write-Host "[skills-sync] Pulling latest skills..." -ForegroundColor Cyan
-    git -C $CACHE_DIR fetch --depth 1 origin $BRANCH 2>&1 | Out-Null
-    git -C $CACHE_DIR reset --hard "origin/$BRANCH" 2>&1 | Out-Null
-}
-
-if (-not (Test-Path $CACHE_DIR)) {
-    Write-Host "[skills-sync] Failed to clone/pull repo. Check URL and network." -ForegroundColor Red
-    exit 1
-}
-
-# ── Determine source of skills inside the repo ───────────────────────────────
-$SKILLS_SRC = if ($SUBDIR) { Join-Path $CACHE_DIR $SUBDIR } else { $CACHE_DIR }
-
-# ── Copy each skill folder into local Claude skills dir ──────────────────────
-$copied = 0
-$skipped = 0
-
-Get-ChildItem -Path $SKILLS_SRC -Directory | ForEach-Object {
-    $skillName = $_.Name
-    # Skip hidden dirs and the git dir
-    if ($skillName -match '^\.' ) { $skipped++; return }
-
-    $dest = Join-Path $CLAUDE_SKILLS $skillName
-
-    # Robocopy: mirror skill folder, suppress most output
-    $result = robocopy $_.FullName $dest /MIR /NFL /NDL /NJH /NJS /NC /NS 2>&1
-    $copied++
-}
-
-Write-Host "[skills-sync] Done — $copied skill(s) synced to $CLAUDE_SKILLS" -ForegroundColor Green
+Write-Host "[skills-sync] Done — $totalSkills skill(s) synced to $CLAUDE_SKILLS" -ForegroundColor Green

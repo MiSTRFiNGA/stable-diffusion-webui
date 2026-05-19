@@ -1,8 +1,27 @@
 {
-  "_comment": "Edit SKILLS_REPO_URL to point at the GitHub repo that contains the Claude Code skills (e.g. superpower). All machines read this file from the shared Drive so you only need to change it in one place.",
-  "skills_repo_url": "PASTE_GITHUB_REPO_URL_HERE",
+  "_comment": "All machines read this file from D:\\My Drive\\AI\\claude-skills-sync\\skills-config.json. Edit once, syncs everywhere.",
+  "repos": [
+    {
+      "url": "https://github.com/obra/superpowers",
+      "subdir": "skills",
+      "_note": "Multiple skills under skills/ — each subfolder with SKILL.md is a skill"
+    },
+    {
+      "url": "https://github.com/affaan-m/ECC",
+      "subdir": "skills",
+      "_note": "ECC skills under skills/"
+    },
+    {
+      "url": "https://github.com/pablo-mano/Obsidian-CLI-skill",
+      "subdir": "skills",
+      "_note": "Obsidian CLI skill under skills/"
+    },
+    {
+      "url": "https://github.com/multica-ai/andrej-karpathy-skills",
+      "subdir": "skills",
+      "_note": "Andrej Karpathy skills under skills/"
+    }
+  ],
   "branch": "main",
-  "skills_subdir": "",
-  "_comment_subdir": "If the skills live in a subfolder of the repo (e.g. 'skills/'), set that here. Leave empty if skill folders are at the repo root.",
   "last_updated": "2026-05-19"
 }

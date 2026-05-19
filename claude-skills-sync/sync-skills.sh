@@ -1,66 +1,88 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HIVEMIND — Claude Code Skills Sync (WSL / Linux / bash)
-# Runs on SessionStart for Claude Code in WSL.
-# Pulls the shared skills repo and copies any new/updated skills into
-# the local Claude Code skills folder.
+# HIVEMIND — Claude Code Skills Sync (WSL / bash)
+# Pulls all skills repos defined in skills-config.json and installs
+# every skill into ~/.claude/skills/ on session start.
 # =============================================================================
 
 set -euo pipefail
 
-# ── Paths ────────────────────────────────────────────────────────────────────
-# Shared Drive (Google Drive) — WSL path
 DRIVE_AI="/mnt/d/My Drive/AI"
-CONFIG_FILE="$DRIVE_AI/claude-skills-sync/skills-config.json"
-CACHE_DIR="$DRIVE_AI/claude-skills-sync/.repo-cache"
+DRIVE_CONFIG="$DRIVE_AI/claude-skills-sync/skills-config.json"
+# Repo-local fallback: same directory as this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_CONFIG="$SCRIPT_DIR/skills-config.json"
 
-# Local Claude Code skills folder (WSL / Linux)
+if [[ -f "$DRIVE_CONFIG" ]]; then
+    CONFIG_FILE="$DRIVE_CONFIG"
+    CACHE_ROOT="$DRIVE_AI/claude-skills-sync/.repo-cache"
+elif [[ -f "$LOCAL_CONFIG" ]]; then
+    CONFIG_FILE="$LOCAL_CONFIG"
+    CACHE_ROOT="$SCRIPT_DIR/.repo-cache"
+else
+    echo "[skills-sync] Config not found — skipping."
+    exit 0
+fi
+
 CLAUDE_SKILLS="$HOME/.claude/skills"
 
-# ── Check config ──────────────────────────────────────────────────────────────
-if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo "[skills-sync] Config not found at $CONFIG_FILE — skipping."
-    exit 0
-fi
+mkdir -p "$CLAUDE_SKILLS" "$CACHE_ROOT"
 
-REPO_URL=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('skills_repo_url',''))" "$CONFIG_FILE")
 BRANCH=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('branch','main'))" "$CONFIG_FILE")
-SUBDIR=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('skills_subdir',''))" "$CONFIG_FILE")
+REPO_COUNT=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(len(d.get('repos',[])))" "$CONFIG_FILE")
 
-if [[ -z "$REPO_URL" || "$REPO_URL" == "PASTE_GITHUB_REPO_URL_HERE" ]]; then
-    echo "[skills-sync] Repo URL not set in skills-config.json — skipping."
+if [[ "$REPO_COUNT" -eq 0 ]]; then
+    echo "[skills-sync] No repos configured — skipping."
     exit 0
 fi
 
-# ── Ensure Claude skills dir exists ──────────────────────────────────────────
-mkdir -p "$CLAUDE_SKILLS"
+total_skills=0
 
-# ── Clone or pull the skills repo into the shared Drive cache ────────────────
-if [[ ! -d "$CACHE_DIR/.git" ]]; then
-    echo "[skills-sync] Cloning skills repo..."
-    git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$CACHE_DIR" 2>/dev/null
-else
-    echo "[skills-sync] Pulling latest skills..."
-    git -C "$CACHE_DIR" fetch --depth 1 origin "$BRANCH" 2>/dev/null
-    git -C "$CACHE_DIR" reset --hard "origin/$BRANCH" 2>/dev/null
-fi
+for i in $(seq 0 $((REPO_COUNT - 1))); do
+    REPO_URL=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['repos'][int(sys.argv[2])]['url'])" "$CONFIG_FILE" "$i")
+    SUBDIR=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['repos'][int(sys.argv[2])].get('subdir',''))" "$CONFIG_FILE" "$i")
 
-# ── Determine source of skills inside the repo ───────────────────────────────
-SKILLS_SRC="$CACHE_DIR"
-if [[ -n "$SUBDIR" ]]; then
-    SKILLS_SRC="$CACHE_DIR/$SUBDIR"
-fi
+    # Derive a safe cache folder name from the repo URL
+    REPO_SLUG=$(echo "$REPO_URL" | sed 's|https://github.com/||; s|/|-|g')
+    CACHE_DIR="$CACHE_ROOT/$REPO_SLUG"
 
-# ── Copy each skill folder into the local Claude skills dir ──────────────────
-copied=0
-for skill_dir in "$SKILLS_SRC"/*/; do
-    skill_name=$(basename "$skill_dir")
-    # Skip hidden dirs
-    [[ "$skill_name" == .* ]] && continue
-    [[ ! -d "$skill_dir" ]] && continue
+    # Try main branch first, fall back to master
+    for branch_try in "$BRANCH" master; do
+        if [[ ! -d "$CACHE_DIR/.git" ]]; then
+            git clone --branch "$branch_try" --depth 1 "$REPO_URL" "$CACHE_DIR" 2>/dev/null && break
+        else
+            git -C "$CACHE_DIR" fetch --depth 1 origin "$branch_try" 2>/dev/null && \
+            git -C "$CACHE_DIR" reset --hard "origin/$branch_try" 2>/dev/null && break
+        fi
+    done
 
-    rsync -a --delete "$skill_dir" "$CLAUDE_SKILLS/$skill_name/"
-    ((copied++))
+    if [[ ! -d "$CACHE_DIR" ]]; then
+        echo "[skills-sync] WARN: failed to clone $REPO_URL — skipping."
+        continue
+    fi
+
+    SKILLS_SRC="$CACHE_DIR"
+    [[ -n "$SUBDIR" ]] && SKILLS_SRC="$CACHE_DIR/$SUBDIR"
+
+    # If the repo root itself is a single skill (has SKILL.md at root), install it as one skill
+    if [[ -f "$SKILLS_SRC/SKILL.md" ]]; then
+        skill_name=$(basename "$REPO_SLUG")
+        rsync -a --delete "$SKILLS_SRC/" "$CLAUDE_SKILLS/$skill_name/"
+        total_skills=$((total_skills + 1))
+        continue
+    fi
+
+    # Otherwise each subdirectory containing a SKILL.md is a separate skill
+    for skill_dir in "$SKILLS_SRC"/*/; do
+        skill_name=$(basename "$skill_dir")
+        [[ "$skill_name" == .* ]] && continue
+        [[ ! -d "$skill_dir" ]] && continue
+        # Only install if it looks like a skill (has SKILL.md)
+        if [[ -f "$skill_dir/SKILL.md" ]]; then
+            rsync -a --delete "$skill_dir" "$CLAUDE_SKILLS/$skill_name/"
+            total_skills=$((total_skills + 1))
+        fi
+    done
 done
 
-echo "[skills-sync] Done — $copied skill(s) synced to $CLAUDE_SKILLS"
+echo "[skills-sync] Done — $total_skills skill(s) synced to $CLAUDE_SKILLS"

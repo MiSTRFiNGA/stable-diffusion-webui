@@ -44,3 +44,16 @@
 #export ACCELERATE="True"
 
 ###########################################
+
+# ── JARVIS II Thin Client — Controller Mode ──────────────────────────────────
+# Uncomment the block below when running as a headless Android controller.
+# Set HIVEMIND_IP to your HiVEMiND Tailscale address before starting.
+#
+# export JARVIS_MODE=CONTROLLER
+# export HIVEMIND_IP=100.x.x.x
+#
+# When MODE=CONTROLLER the webui is launched API-only (no GPU, no model load).
+# All generation requests are proxied to HiVEMiND by jarvis_mobile/jarvis_controller.py.
+# To activate controller mode, uncomment and run via:
+#   bash jarvis_mobile/start_brain.sh
+# ─────────────────────────────────────────────────────────────────────────────

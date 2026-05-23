@@ -13,7 +13,10 @@ import subprocess
 MODE = os.environ.get("JARVIS_MODE", "CONTROLLER")
 
 # ─── HiVEMiND Tailscale Network ────────────────────────────────────────────────
-HIVEMIND_TAILSCALE_IP = os.environ.get("HIVEMIND_IP", "100.x.x.x")  # Replace x.x.x with real IP
+# IPv4:     100.86.132.90
+# Hostname: hivemind.tailcbd4e0.ts.net
+# IPv6:     fd7a:115c:a1e0::c301:8499
+HIVEMIND_TAILSCALE_IP = os.environ.get("HIVEMIND_IP", "100.86.132.90")
 
 # ─── Remote Service Endpoints (all traffic → HiVEMiND) ─────────────────────────
 ENDPOINTS = {

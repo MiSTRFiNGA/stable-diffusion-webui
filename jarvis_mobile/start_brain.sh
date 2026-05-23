@@ -53,7 +53,7 @@ info "HiVEMiND IP    : $HIVEMIND_IP"
 info "Controller port: $JARVIS_LOCAL_PORT"
 
 # ── Validate IP ───────────────────────────────────────────────────────────────
-if [[ "$HIVEMIND_IP" == "100.x.x.x" ]]; then
+if [[ "$HIVEMIND_IP" == "100.x.x.x" || -z "$HIVEMIND_IP" ]]; then
     die "HIVEMIND_IP is not configured. Edit $ENV_FILE and set your Tailscale IP."
 fi
 
